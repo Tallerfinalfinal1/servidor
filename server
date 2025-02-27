@@ -1,0 +1,46 @@
+// Backend: Node.js + Express + Firebase
+const express = require('express');
+const multer = require('multer');
+const admin = require('firebase-admin');
+const cors = require('cors');
+const serviceAccount = require('./firebase-key.json');
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: "your-firebase-bucket.appspot.com"
+});
+
+const bucket = admin.storage().bucket();
+const app = express();
+app.use(cors());
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Subir archivo
+app.post('/upload', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).send('No file uploaded.');
+    const file = bucket.file(req.file.originalname);
+    await file.save(req.file.buffer, { contentType: req.file.mimetype });
+    res.send(`File uploaded: ${req.file.originalname}`);
+});
+
+// Obtener lista de archivos
+app.get('/files', async (req, res) => {
+    const [files] = await bucket.getFiles();
+    res.json(files.map(file => ({ name: file.name, url: file.publicUrl() })));
+});
+
+// Descargar archivo
+app.get('/download/:name', async (req, res) => {
+    const file = bucket.file(req.params.name);
+    const exists = (await file.exists())[0];
+    if (!exists) return res.status(404).send('File not found.');
+    file.createReadStream().pipe(res);
+});
+
+// Eliminar archivo
+app.delete('/delete/:name', async (req, res) => {
+    await bucket.file(req.params.name).delete();
+    res.send('File deleted.');
+});
+
+app.listen(3000, () => console.log('Server running on port 3000'));
